@@ -1,0 +1,27 @@
+// Min Zeng     cs610 3608 prp
+HANDOUT 2 ADHERED; NO BUGS TO REPORT
+
+gcc version 4.8.5 20150623 (Red Hat 4.8.5-16) (GCC)
+
+# Instructions
+
+1. To build the source code:
+
+% make
+
+or
+
+% g++ -c Huffman3608.cpp
+% g++ -c MinHeap3608.cpp
+% g++ -o henc3608 henc3608.cpp Huffman3608.o MinHeap3608.o
+% g++ -o hdec3608 hdec3608.cpp Huffman3608.o MinHeap3608.o
+
+
+2. To run the code:
+
+To encode:
+% ./henc3608 filename.pdf
+
+To decode:
+% ./hdec3608 filename.pdf.huf
+

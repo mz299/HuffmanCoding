@@ -1,0 +1,226 @@
+// Min Zeng     cs610 3608 prp
+
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include "Huffman3608.h"
+#include "MinHeap3608.h"
+
+using namespace std;
+
+vector<unsigned char> readOriginFile3608(const char* filePath) {
+    vector<unsigned char> filedata = vector<unsigned char>();
+    ifstream fin(filePath, ios::binary);
+    unsigned char byte;
+    while (fin.read(reinterpret_cast<char*>(&byte), sizeof(byte))) {
+        filedata.push_back(byte);
+    }
+    fin.close();
+    return filedata;
+}
+
+void writeEncodedFile3608(const char* filePath, vector<Node*> minHeap, vector<unsigned char> encodedData, char lastByteBitCount) {
+    string encodedFilePath = string(filePath);
+    encodedFilePath += ".huf";
+    
+    size_t size = minHeap.size();
+    
+    ofstream fout(encodedFilePath.c_str(), ios::out | ios::binary);
+    fout.write(reinterpret_cast<char*>(&size), sizeof(size));
+    for (int i = 0; i < size; i ++) {
+        unsigned char byte = minHeap[i]->byte;
+        int count = minHeap[i]->count;
+        fout.write(reinterpret_cast<char*>(&byte), sizeof(byte));
+        fout.write(reinterpret_cast<char*>(&count), sizeof(count));
+    }
+    fout.write(reinterpret_cast<char*>(&lastByteBitCount), sizeof(lastByteBitCount));
+    fout.write(reinterpret_cast<char*>(&encodedData[0]), encodedData.size() * sizeof(unsigned char));
+    fout.close();
+    
+    printf("Output file: %s\n", encodedFilePath.c_str());
+}
+
+vector<Node*> filedataToNodes3608(vector<unsigned char> filedata) {
+    vector<Node*> nodes = vector<Node*>();
+    int table[UCHAR_MAX + 1] = {0};
+    for (int i = 0; i < filedata.size(); i++) {
+        table[filedata[i]]++;
+    }
+    for (int i = 0; i <= UCHAR_MAX; i++) {
+        if (table[i] == 0)
+            continue;
+        Node* node = new Node(i, table[i]);
+        nodes.push_back(node);
+    }
+    return nodes;
+}
+
+vector<unsigned char> encode3608(vector<unsigned char> filedata, const string codebook[], char &lastByteBitCount) {
+    vector<unsigned char> encodedData = vector<unsigned char>();
+    
+    unsigned char nextByte = 0;
+    char bitCounter = 0;
+    
+    for (int i = 0; i < filedata.size(); i++) {
+        unsigned char nextChar = filedata[i];
+        for (int i = 0; i < codebook[nextChar].size(); i++, bitCounter++) {
+            if (bitCounter == 8) {
+                encodedData.push_back(nextByte);
+                nextByte = 0;
+                bitCounter = 0;
+            }
+            if (codebook[nextChar][i] == '1') {
+                nextByte = nextByte | (0x01 << bitCounter);
+            }
+        }
+    }
+    if (bitCounter) {
+        encodedData.push_back(nextByte);
+    }
+    
+    lastByteBitCount = bitCounter;
+    return encodedData;
+}
+
+void encode3608(const char* filePath) {
+    vector<unsigned char> filedata = readOriginFile3608(filePath);
+    
+    if (filedata.empty()) {
+        printf("No such file.\n");
+        return;
+    }
+    
+    vector<Node*> nodes = filedataToNodes3608(filedata);
+    
+    MinHeap3608 minHeap = MinHeap3608();
+    minHeap.buildMinHeap3608(nodes);
+    
+    Huffman3608 huffman = Huffman3608();
+    huffman.genarateHuffman3608(minHeap);
+    huffman.genarateCodebook3608();
+    
+    char lastByteBitCount;
+    vector<unsigned char> encodedData = encode3608(filedata, huffman.codebook, lastByteBitCount);
+    printf("Original size: %ld\nEncoded size: %ld\n", filedata.size(), encodedData.size());
+    
+    writeEncodedFile3608(filePath, minHeap.minHeap, encodedData, lastByteBitCount);
+}
+
+void readEncodedFile3608(const char* filePath, vector<Node*> &minHeap, vector<unsigned char> &encodedData, char &lastByteBitCount) {
+    ifstream fin(filePath, ios::binary);
+    size_t size;
+    fin.read(reinterpret_cast<char*>(&size), sizeof(size));
+    
+    for (int i = 0; i < size; i++) {
+        unsigned char byte;
+        int count;
+        fin.read(reinterpret_cast<char*>(&byte), sizeof(byte));
+        fin.read(reinterpret_cast<char*>(&count), sizeof(count));
+        Node* node = new Node(byte, count);
+        minHeap.push_back(node);
+    }
+    
+    fin.read(reinterpret_cast<char*>(&lastByteBitCount), sizeof(lastByteBitCount));
+    
+    unsigned char byte;
+    while (fin.read(reinterpret_cast<char*>(&byte), sizeof(byte))) {
+        encodedData.push_back(byte);
+    }
+    fin.close();
+}
+
+void writeDecodedFile3608(const char* filePath, vector<unsigned char> decodedData) {
+    string decodedPath = string(filePath);
+    decodedPath = decodedPath.substr(0, decodedPath.size()-4);
+    
+    ofstream fout(decodedPath.c_str(), ios::out | ios::binary);
+    fout.write(reinterpret_cast<char*>(&decodedData[0]), decodedData.size() * sizeof(unsigned char));
+    fout.close();
+    
+    printf("Output file: %s\n", decodedPath.c_str());
+}
+
+vector<unsigned char> decode3608(vector<unsigned char> encodedData, Node* huffmanRoot, char lastByteBitCount) {
+    vector<unsigned char> decodedData = vector<unsigned char>();
+    
+    unsigned char nextByte = 0;
+    Node* node = huffmanRoot;
+    
+    for (int i = 0; i < encodedData.size(); i++) {
+        nextByte = encodedData[i];
+        for (int j = 0; j < 8; j++) {
+            if (i == encodedData.size()-1 && lastByteBitCount > 0) {
+                if (j + 1 > lastByteBitCount)
+                    break;
+            }
+            if ((nextByte >> j) & 0x01) {
+                if (node != NULL && node->right != NULL){
+                    node = node->right;
+                }
+            }
+            else {
+                if (node != NULL && node->left != NULL)
+                    node = node->left;
+            }
+            if (node != NULL && node->right == NULL && node->left == NULL) {
+                unsigned char byte = node->byte;
+                decodedData.push_back(byte);
+                node = huffmanRoot;
+            }
+        }
+    }
+    
+    return decodedData;
+}
+
+bool checkSuffix(const char* filePath) {
+    string path = string(filePath);
+    string suffix = ".huf";
+    if (path.length() >= suffix.length()) {
+        return (0 == path.compare (path.length() - suffix.length(), suffix.length(), suffix));
+    } else {
+        return false;
+    }
+}
+
+void decode3608(const char* filePath) {
+    if (!checkSuffix(filePath)) {
+        return;
+    }
+    
+    MinHeap3608 minHeap = MinHeap3608();
+    vector<unsigned char> encodedData = vector<unsigned char>();
+    char lastByteBitCount;
+    readEncodedFile3608(filePath, minHeap.minHeap, encodedData, lastByteBitCount);
+    
+    Huffman3608 huffman = Huffman3608();
+    huffman.genarateHuffman3608(minHeap);
+    
+    printf("Encoded size: %ld\n", encodedData.size());
+    vector<unsigned char> decodedData = decode3608(encodedData, huffman.root, lastByteBitCount);
+    printf("\nDecoded complete.\nDecoded size: %ld\n", decodedData.size());
+    writeDecodedFile3608(filePath, decodedData);
+}
+
+int main(int argc, const char *argv[]) {
+    printf("\n\tHuffman Coding.\n\tby Min Zeng\n");
+    
+    if (argc == 3) {
+        string filePath = argv[2];
+        
+        if ((argv[1][0] == '-') && (argv[1][1] == 'e')) {
+            printf("\nEncoding file: %s\n", filePath.c_str());
+            encode3608(filePath.c_str());
+            return 0;
+        }
+        if ((argv[1][0] == '-') && (argv[1][1] == 'd')) {
+            printf("\nDecoding file: %s\n", filePath.c_str());
+            decode3608(filePath.c_str());
+            return 0;
+        }
+    }
+    
+    printf("\nPlease input proper arguments: \n\nFor encoding: \n./henc3608 -e <file path> \n\nFor decoding: \n./henc3608 -d <file path>\n\n");
+    
+    return 0;
+}
